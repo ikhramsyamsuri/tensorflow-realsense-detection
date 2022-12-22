@@ -45,7 +45,7 @@ import time
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as viz_utils
 
-PATH_TO_SAVED_MODEL = PATH_TO_MODEL_DIR + ("/saved_model")
+PATH_TO_SAVED_MODEL = PATH_TO_MODEL_DIR
 
 print('Loading model...', end='')
 start_time = time.time()
