@@ -1,25 +1,20 @@
-import warnings
-import numpy as np
-from object_detection.utils import label_map_util as CategoryLabel
-import time
-from base.mask_rcnn import MaskRCNN
-from base.realsense_camera import RealsenseCamera
-import cv2
-import argparse
-import tensorflow as tf
+#!/usr/bin/env python
+# coding: utf-8
+"""
+Object Detection (On Video) From TF2 Saved Model
+=====================================
+"""
+
 import os
-# Suppress TensorFlow logging (1)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'    # Suppress TensorFlow logging (1)
+import pathlib
+import tensorflow as tf
+import argparse
+
+import cv2
 
 
-# Load the model
-# ===============================================================================================================
-
-# Suppress Matplotlib warnings
-warnings.filterwarnings('ignore')
-
-# Suppress TensorFlow logging (2)
-tf.get_logger().setLevel('ERROR')
+tf.get_logger().setLevel('ERROR')           # Suppress TensorFlow logging (2)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', help='Folder that the Saved Model is Located In',
@@ -28,7 +23,7 @@ parser.add_argument('--labels', help='Where the Labelmap is Located',
                     default='models/label_map.pbtxt')
 parser.add_argument('--threshold', help='Minimum confidence threshold for displaying detected objects',
                     default=0.5)
-
+                    
 args = parser.parse_args()
 # Enable GPU dynamic memory allocation
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -44,8 +39,13 @@ PATH_TO_LABELS = args.labels
 # PROVIDE THE MINIMUM CONFIDENCE THRESHOLD
 MIN_CONF_THRESH = float(args.threshold)
 
+# Load the model
+# ~~~~~~~~~~~~~~
+import time
+from object_detection.utils import label_map_util
+from object_detection.utils import visualization_utils as viz_utils
 
-PATH_TO_SAVED_MODEL = PATH_TO_MODEL_DIR
+PATH_TO_SAVED_MODEL = PATH_TO_MODEL_DIR 
 
 print('Loading model...', end='')
 start_time = time.time()
@@ -57,29 +57,40 @@ end_time = time.time()
 elapsed_time = end_time - start_time
 print('Done! Took {} seconds'.format(elapsed_time))
 
-
 # Load label map data (for plotting)
-# ==================================================================================================================================
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-category_index = CategoryLabel.create_category_index_from_labelmap(PATH_TO_LABELS,
-                                                                   use_display_name=True)
-# Load Realsense camera
-rs = RealsenseCamera()
-mrcnn = MaskRCNN()
+
+category_index = label_map_util.create_category_index_from_labelmap(PATH_TO_LABELS,
+                                                                    use_display_name=True)
+
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')   # Suppress Matplotlib warnings
+
+def load_image_into_numpy_array(path):
+    """Load an image from file into a numpy array.
+    Puts image into numpy array to feed into tensorflow graph.
+    Note that by convention we put it into a numpy array with shape
+    (height, width, channels), where channels=3 for RGB.
+    Args:
+      path: the file path to the image
+    Returns:
+      uint8 numpy array with shape (img_height, img_width, 3)
+    """
+    return np.array(Image.open(path))
+
+
+
 
 print('Running inference for Webcam', end='')
 
 # Initialize Webcam
 videostream = cv2.VideoCapture(0)
-ret = videostream.set(3, 1280)
-ret = videostream.set(4, 720)
-
-# Deep camera stream
-deepBol, bgr_frame, depth_frame = rs.get_frame_stream()
-
-# Detect Object
-boxes, classes, contours, centers = mrcnn.detect_objects_mask(
-    bgr_frame)
+ret = videostream.set(3,1280)
+ret = videostream.set(4,720)
 
 while True:
 
@@ -103,60 +114,62 @@ while True:
     # We're only interested in the first num_detections.
     num_detections = int(detections.pop('num_detections'))
     detections = {key: value[0, :num_detections].numpy()
-                  for key, value in detections.items()}
+                   for key, value in detections.items()}
     detections['num_detections'] = num_detections
 
     # detection_classes should be ints.
-    detections['detection_classes'] = detections['detection_classes'].astype(
-        np.int64)
+    detections['detection_classes'] = detections['detection_classes'].astype(np.int64)
 
+    
     # SET MIN SCORE THRESH TO MINIMUM THRESHOLD FOR DETECTIONS
-
-    detections['detection_classes'] = detections['detection_classes'].astype(
-        np.int64)
+    
+    detections['detection_classes'] = detections['detection_classes'].astype(np.int64)
     scores = detections['detection_scores']
     boxes = detections['detection_boxes']
     classes = detections['detection_classes']
     count = 0
-
     for i in range(len(scores)):
         if ((scores[i] > MIN_CONF_THRESH) and (scores[i] <= 1.0)):
-            # increase count
+            #increase count
             count += 1
             # Get bounding box coordinates and draw box
             # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
-            ymin = int(max(1, (boxes[i][0] * imH)))
-            xmin = int(max(1, (boxes[i][1] * imW)))
-            ymax = int(min(imH, (boxes[i][2] * imH)))
-            xmax = int(min(imW, (boxes[i][3] * imW)))
-
-            cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (10, 255, 0), 2)
+            ymin = int(max(1,(boxes[i][0] * imH)))
+            xmin = int(max(1,(boxes[i][1] * imW)))
+            ymax = int(min(imH,(boxes[i][2] * imH)))
+            xmax = int(min(imW,(boxes[i][3] * imW)))
+            
+            cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
             # Draw label
-            # Look up object name from "labels" array using class index
-            object_name = category_index[int(classes[i])]['name']
+            object_name = category_index[int(classes[i])]['name'] # Look up object name from "labels" array using class index
+            label = '%s: %d%%' % (object_name, int(scores[i]*100)) # Example: 'person: 72%'
+            labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
+            label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
+            cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
+            cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
+            
+    def draw_object_info(self, bgr_frame, depth_frame):
+        # loop through the detection
+        for box, class_id, obj_center in zip(self.obj_boxes, self.obj_classes, self.obj_centers):
+            x, y, x2, y2 = box
 
-            # Jarak deph camera using rectacgle area
-            depth_mm = depth_frame[ymin, xmin]
+            color = self.colors[int(class_id)]
+            color = (int(color[0]), int(color[1]), int(color[2]))
 
-            # Label Barang, Score, Jarak
-            label = '%s: %d%%,  %d CM' % (object_name, int(
-                scores[i]*100), depth_mm / 10)  # Example: 'person: 72%'
-            labelSize, baseLine = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)  # Get font size
+            cx, cy = obj_center
 
-            # Make sure not to draw label too close to top of window
-            label_ymin = max(ymin, labelSize[1] + 10)
-            # Draw white box to put label text in
-            cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (
-                xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED)
+            depth_mm = depth_frame[cy, cx]
 
-            # Draw label text
-            cv2.putText(frame, label, (xmin, label_ymin-7),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+            cv2.line(bgr_frame, (cx, y), (cx, y2), color, 1)
+            cv2.line(bgr_frame, (x, cy), (x2, cy), color, 1)
 
-    cv2.putText(frame, 'Objects Detected : ' + str(count), (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (70, 235, 52), 2, cv2.LINE_AA)
+            class_name = self.classes[int(class_id)]
+            cv2.rectangle(bgr_frame, (x, y), (x + 250, y + 70), color, -1)
+            cv2.putText(bgr_frame, class_name.capitalize(), (x + 5, y + 25), 0, 0.8, (255, 255, 255), 2)
+            cv2.putText(bgr_frame, "{} cm".format(depth_mm / 10), (x + 5, y + 60), 0, 1.0, (255, 255, 255), 2)
+            cv2.rectangle(bgr_frame, (x, y), (x2, y2), color, 1)
 
+    cv2.putText (frame,'Objects Detected : ' + str(count),(10,25),cv2.FONT_HERSHEY_SIMPLEX,1,(70,235,52),2,cv2.LINE_AA)
     cv2.imshow('Objects Detector', frame)
 
     if cv2.waitKey(1) == ord('q'):
