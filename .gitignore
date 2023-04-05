@@ -108,3 +108,7 @@ experiments/
 
 # Assets
 assets/*
+
+# Hasil Models Training Faster R-CNN
+variables
+models_berhasil
