@@ -110,5 +110,5 @@ experiments/
 assets/*
 
 # Hasil Models Training Faster R-CNN
-variables
+Models
 models_berhasil
